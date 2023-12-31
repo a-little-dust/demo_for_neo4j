@@ -5,8 +5,7 @@ import lombok.Data;
 public class MovieSearcherDto {
     private String actors;
     private String category;
-    private String startDate;
-    private String endDate;
+    private String[] Date;
     private String directorNames;
     private Double maxScore;
     private Double minScore;
