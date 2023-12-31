@@ -117,13 +117,14 @@ public class CooperationController {
             // 记录开始时间
             long startTime = System.currentTimeMillis();
             //直接返回名字和评论数量
-            String query= new String("MATCH (p:Person)-[r:Act]->(m:Movie)<-[a:Act]-(q:Person) " +
-                    "WHERE id(p) <> id(q) " );
-//            if(category!=null && category!="")
-//                query+=("AND m.category contains \""+category+"\" ");
-            query+= ("RETURN p.name, q.name, sum(toInteger( m.comment_num)) AS totalHeat " +
+            String query= new String("MATCH (p:Person)-[r:Act]->(m:Movie)<-[a:Act]-(q:Person) " );
+            if(category!=null && category!="")
+                query +=" , (m)-[:Belong]->(c:Category WHERE toLower(c.name) CONTAINS toLower(\'"+category+"\'))";
+
+            query+= ("WHERE id(p) <> id(q) RETURN p.name, q.name, sum(toInteger( m.comment_num)) AS totalHeat " +
                     "ORDER BY totalHeat DESC " +
                     "LIMIT 10");
+            System.out.println(query);
             Result res= session.run(query);
             // 记录结束时间
             long endTime = System.currentTimeMillis();

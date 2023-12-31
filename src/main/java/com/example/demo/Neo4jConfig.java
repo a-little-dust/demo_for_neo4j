@@ -28,8 +28,4 @@ public class Neo4jConfig {
     public Driver neo4jDriver() {
         return GraphDatabase.driver(url, AuthTokens.basic(userName, password));
     }
-//    @Bean
-//    public CooperationController cooperationController(@Qualifier("session") Session session) {
-//        return new CooperationController(session);
-//    }
 }
