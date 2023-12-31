@@ -20,6 +20,10 @@ public class CooperationController {
 
     public CooperationController(Driver driver) {
         this.driver = driver;
+        try (Session session = driver.session()){
+            //进行预热查询
+            session.run("MATCH (n)-[r]->() RETURN count(r)");
+        }
     }
 
     //不传参数 返回合作最多的演员和导演
@@ -45,18 +49,42 @@ public class CooperationController {
             HashMap<String,Object> response = new HashMap<>();
             List<Record> result = res.list();//通过执行请求，返回的内容
             List<HashMap<String, Object>> relationResult = new ArrayList<>();//整理返回的关系信息
-//            for(int i=0;i<result.size();++i){
-//                HashMap<String, Object> relation = new HashMap<>();
-//                relation.put("actor",result.get(i).get("_fields").get(0).asString());
-//                relation.put("director",result.get(i).get("_fields").get(1).asString());
-//                relation.put("number",Integer.parseInt(result.get(i).get("_fields").get(2).get("low").asString()) );
-//                relationResult.add(relation);
-//            }
             for (Record r : result) {
                 HashMap<String, Object> relation = new HashMap<>();
                 relation.put("actor", r.get("p.name").asString());
                 relation.put("director", r.get("q.name").asString());
                 Value countValue = r.get("count(m)");
+                if (!countValue.isNull()) {
+                    Long count = countValue.asNumber().longValue();
+                    relation.put("number", count.intValue());
+                    relationResult.add(relation);
+                }
+                response.put("relation",relationResult);
+            }
+            response.put("time",endTime-startTime);
+            return response;
+        }
+    }
+
+    //优化：采用DirectAct关系，找到合作最多的演员和导演
+    @GetMapping(path = "/actor_director_2",produces =  MediaType.APPLICATION_JSON_VALUE)
+    public HashMap<String, Object> findMostCooperateActorAndDirector_2(){
+        try (Session session = driver.session())  {
+            // 记录开始时间
+            long startTime = System.currentTimeMillis();
+            //直接通过r.count找到合作最多的演员和导演
+            Result res= session.run("Match (p:Person)-[r:DirectAct]->(q:Person) " +
+                    "return p.name,q.name,r.count order by r.count desc limit 10");
+            // 记录结束时间
+            long endTime = System.currentTimeMillis();
+            HashMap<String,Object> response = new HashMap<>();
+            List<Record> result = res.list();//通过执行请求，返回的内容
+            List<HashMap<String, Object>> relationResult = new ArrayList<>();//整理返回的关系信息
+            for (Record r : result) {
+                HashMap<String, Object> relation = new HashMap<>();
+                relation.put("actor", r.get("p.name").asString());
+                relation.put("director", r.get("q.name").asString());
+                Value countValue = r.get("r.count");
                 if (!countValue.isNull()) {
                     Long count = countValue.asNumber().longValue();
                     relation.put("number", count.intValue());
