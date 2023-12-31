@@ -59,9 +59,8 @@ public class MatchController {
                 }
             }
             //接下来处理date，前端传来两个字符串，分别是最小日期和最大日期
-            String[] date = MovieSearcher.getDate();
-            String start_date = date[0];
-            String end_date = date[1];
+            String start_date = MovieSearcher.getStartDate();
+            String end_date = MovieSearcher.getEndDate();
             //已知，start_date和end_date的格式为：yyyy-mm-ddThh:mm:ss.000Z 例如：2010-11-02T00:00:00.000Z
             //我们需要把它们转为：yyyy-mm-dd
             int start_year = 0, start_month = 0, start_day = 0, end_year = 0, end_month = 0, end_day = 0;
@@ -220,139 +219,6 @@ public class MatchController {
         }
     }
 
-    String get_better_query(MovieSearcherDto MovieSearcher) {
-        String query = "match ";
-        //首先把MovieSearcher转为我们需要的数据
-        //以下几项内容需要按逗号分隔：actors,directorNames,category
-        List<String> actor_list = new ArrayList<>();
-        //如果不为空，就按逗号分隔
-        if (MovieSearcher.getActors() != null && MovieSearcher.getActors().trim() != "") {
-            String[] actors = MovieSearcher.getActors().split(",");
-            for (String actor : actors) {
-                actor_list.add(actor.trim());
-            }
-        }
-        List<String> director_list = new ArrayList<>();
-        if (MovieSearcher.getDirectorNames() != null && MovieSearcher.getDirectorNames().trim() != "") {
-            String[] directors = MovieSearcher.getDirectorNames().split(",");
-            for (String director : directors) {
-                director_list.add(director.trim());
-            }
-        }
-        List<String> category_list = new ArrayList<>();
-        if (MovieSearcher.getCategory() != null && MovieSearcher.getCategory().trim() != "") {
-            String[] categories = MovieSearcher.getCategory().split(",");
-            for (String category : categories) {
-                category_list.add(category.trim());
-            }
-        }
-        //接下来处理date，前端传来两个字符串，分别是最小日期和最大日期
-        String[] date = MovieSearcher.getDate();
-        String start_date = date[0];
-        String end_date = date[1];
-        //已知，start_date和end_date的格式为：yyyy-mm-ddThh:mm:ss.000Z 例如：2010-11-02T00:00:00.000Z
-        //我们需要把它们转为：yyyy-mm-dd
-        int start_year = 0, start_month = 0, start_day = 0, end_year = 0, end_month = 0, end_day = 0;
-        if (start_date != null && start_date != "") {
-            String[] start_date_list = start_date.split("T");
-            String[] start_date_final_list = start_date_list[0].split("-");
-            start_year = Integer.parseInt(start_date_final_list[0]);
-            start_month = Integer.parseInt(start_date_final_list[1]);
-            start_day = Integer.parseInt(start_date_final_list[2]);
-        }
-        if (end_date != null && end_date != "") {
-            String[] end_date_list = end_date.split("T");
-            String[] end_date_final_list = end_date_list[0].split("-");
-            end_year = Integer.parseInt(end_date_final_list[0]);
-            end_month = Integer.parseInt(end_date_final_list[1]);
-            end_day = Integer.parseInt(end_date_final_list[2]);
-        }
-        //先判断它是否有连接什么关系
-        //下面这些都出现在where之前
-        // 类别
-        if (!category_list.isEmpty()) {
-            for (String category : category_list)
-                query += " , (m)-[:Belong]->(:Category{name:\"" + category + "\"})";
-        }
-        // 导演名称
-        if (!director_list.isEmpty()) {
-            for (String directorName : director_list) {
-                query += " ,(m)<-[:Direct]-(:Person{name:\"" + directorName + "\"})";
-            }
-        }
-        // 演员名称
-        if (!actor_list.isEmpty()) {
-            for (String actor : actor_list) {
-                query += " ,(m)<-[:Act]-(:Person{name:\"" + actor + "\"})";
-            }
-        }
-        //where只出现一次，后面的条件都用and连接
-        Boolean whereAppear = false;
-        // 电影名称 是对大小写不敏感的 支持模糊查询
-        if (MovieSearcher.getMovieName() != null && MovieSearcher.getMovieName().trim() != "") {
-            query += " where toLower(m.title) contains toLower(\"" + MovieSearcher.getMovieName() + "\") ";
-            whereAppear = true;
-        }
-        //发布日期
-        if (start_date != null) {
-            if (whereAppear) {
-                query += " and ";
-            } else {
-                query += " where ";
-                whereAppear = true;
-            }
-            query += " toInteger(m.year)*10000+toInteger(m.month)*100+toInteger(m.day) >= " +
-                    (10000 * start_year + 100 * start_month + start_day) + " ";
-        }
-        if (end_date != null) {
-            if (whereAppear) {
-                query += " and ";
-            } else {
-                query += " where ";
-                whereAppear = true;
-            }
-            query += " toInteger(m.year)*10000+toInteger(m.month)*100+toInteger(m.day) <= " +
-                    (10000 * end_year + 100 * end_month + end_day) + " ";
-        }
-        //正向评论
-        if (MovieSearcher.getPositive() != null) {
-            if (whereAppear) {
-                query += " and ";
-            } else {
-                query += " where ";
-                whereAppear = true;
-            }
-            if (MovieSearcher.getPositive() == true)
-                query += " m.has_positive = \"True\" ";
-            else
-                query += " m.has_positive = \"False\" ";
-        }
-        // 最低评分
-        if (MovieSearcher.getMinScore() != null) {
-            if (whereAppear) {
-                query += " and ";
-            } else {
-                query += " where ";
-                whereAppear = true;
-            }
-            query += " toFloat(m.rating) >=" + MovieSearcher.getMinScore() + " ";
-        }
-        // 最高评分
-        if (MovieSearcher.getMaxScore() != null) {
-            if (whereAppear) {
-                query += " and ";
-            } else {
-                query += " where ";
-                whereAppear = true;
-            }
-            query += " toFloat(m.rating) <= " + MovieSearcher.getMaxScore() + " ";
-        }
-
-        query += " return m";
-        query += " limit 20";
-        System.out.println("查询语句为: " + query);
-        return query;
-    }
 }
 
 
