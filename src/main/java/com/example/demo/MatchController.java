@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 
 @RestController
@@ -28,11 +29,12 @@ public class MatchController {
 
     @PostMapping(path = "/match", produces = MediaType.APPLICATION_JSON_VALUE)
     //根据条件查找电影
-    public HashMap<String, Object> getMovieByCondition(@RequestBody MovieSearcherDto MovieSearcher) {
+    public HashMap<String, Object> getMovieByCondition(@RequestBody HashMap<String, MovieSearcherDto> MovieInfo) {
 //MATCH (m:Movie {title:'Book and Sword', isPositive:'True'})-[:Belong]->(c:Category)
 //RETURN COUNT(m)
         //所以需要分别找到电影、演员等需要满足什么条件
         try (Session session = driver.session()) {
+            MovieSearcherDto MovieSearcher = MovieInfo.get("movieInfo");
             String query = "match (m:Movie) ";
             //首先把MovieSearcher转为我们需要的数据
             //以下几项内容需要按逗号分隔：actors,directorNames,category
@@ -59,8 +61,15 @@ public class MatchController {
                 }
             }
             //接下来处理date，前端传来两个字符串，分别是最小日期和最大日期
-            String start_date = MovieSearcher.getStartDate();
-            String end_date = MovieSearcher.getEndDate();
+            List<String> date_list = MovieSearcher.getDate();
+            String start_date=null,end_date=null;
+            if(date_list!=null&&date_list.size()>=1){
+                start_date=date_list.get(0);
+                if(date_list.size()>=2)
+                    end_date=date_list.get(1);
+            }
+            System.out.println("MovieSearcher:"+MovieSearcher.toString());
+            System.out.println("start_date:"+start_date+" end_date:"+end_date);
             //已知，start_date和end_date的格式为：yyyy-mm-ddThh:mm:ss.000Z 例如：2010-11-02T00:00:00.000Z
             //我们需要把它们转为：yyyy-mm-dd
             int start_year = 0, start_month = 0, start_day = 0, end_year = 0, end_month = 0, end_day = 0;
@@ -180,7 +189,7 @@ public class MatchController {
                 HashMap<String, Object> movieNode = new HashMap<>();
                 //找第i个结点的属性
                 if (result.get(i).get("m").get("title") != NullValue.NULL) {
-                    movieNode.put("title", result.get(i).get("m").get("title").asString());
+                    movieNode.put("movieName", result.get(i).get("m").get("title").asString());
                 }
                 if (result.get(i).get("m").get("format") != NullValue.NULL) {
                     String format = result.get(i).get("m").get("format").asString();
@@ -210,7 +219,7 @@ public class MatchController {
                     movieNode.put("time", "未知");
                 movieResult.add(movieNode);
             }
-
+System.out.println("接收到的电影为："+movieResult);
             response.put("movies", movieResult);
             response.put("movieNum", result.size());//所有符合条件的电影数
             response.put("time", endTime - startTime);
