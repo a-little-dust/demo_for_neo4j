@@ -22,7 +22,8 @@ public class CooperationController {
         this.driver = driver;
         try (Session session = driver.session()){
             //进行预热查询
-            session.run("MATCH (n)-[r]->() RETURN count(r)");
+            session.run("MATCH ()-[r]->() RETURN count(r)");
+            System.out.println("预热查询完成");
         }
     }
 
@@ -36,8 +37,8 @@ public class CooperationController {
     order by count(m) desc：按照合作的电影数量 m 降序排序结果。
 
     limit 1：限制只返回排序后的第一条记录，即合作次数最多的那对人员的信息*/
-    @GetMapping(path = "/actor_director",produces =  MediaType.APPLICATION_JSON_VALUE)
-    public HashMap<String, Object> findMostCooperateActorAndDirector(){
+    @GetMapping(path = "/actor_director_2",produces =  MediaType.APPLICATION_JSON_VALUE)
+    public HashMap<String, Object> findMostCooperateActorAndDirector_origin(){
         try (Session session = driver.session())  {
             // 记录开始时间
             long startTime = System.currentTimeMillis();
@@ -66,8 +67,8 @@ public class CooperationController {
         }
     }
 
-    //优化：采用DirectAct关系，找到合作最多的演员和导演
-    @GetMapping(path = "/actor_director_2",produces =  MediaType.APPLICATION_JSON_VALUE)
+    //优化：采用DirectAct关系，直接找到合作最多的演员和导演
+    @GetMapping(path = "/actor_director",produces =  MediaType.APPLICATION_JSON_VALUE)
     public HashMap<String, Object> findMostCooperateActorAndDirector_2(){
         try (Session session = driver.session())  {
             // 记录开始时间
@@ -97,14 +98,16 @@ public class CooperationController {
         }
     }
     //类似地，查找合作次数最多的演员
+    //优化：使用>而不是<>，避免了重复
     @GetMapping(path = "/actor_actor", produces = MediaType.APPLICATION_JSON_VALUE)
     public HashMap<String, Object> findMostCooperateActors(){
+        System.out.println("findMostCooperateActors");
         try (Session session = driver.session())  {
             // 记录开始时间
             long startTime = System.currentTimeMillis();
             //直接返回名字和合作次数
             Result res= session.run("Match (p:Person)-[r:Act]->(m:Movie)<-[a:Act]-(q:Person) " +
-                    "where id(p)<> id(q) return p.name,q.name,count(m) order by count(m) desc limit 10");
+                    "where id(p)> id(q) return p.name,q.name,count(m) order by count(m) desc limit 10");
             // 记录结束时间
             long endTime = System.currentTimeMillis();
             HashMap<String,Object> response = new HashMap<>();
@@ -115,7 +118,7 @@ public class CooperationController {
                 String actor1 = result.get(i).get("p.name").asString();
                 String actor2 = result.get(i).get("q.name").asString();
                 String number = result.get(i).get("count(m)").toString();
-                boolean flag = false;
+                /*boolean flag = false;
                 for(int j=0;j<relationResult.size()&& flag==false;j++)
                 {
                     if(relationResult.get(j).get("actor1").equals(actor1)&&relationResult.get(j).get("actor2").equals(actor1))
@@ -126,7 +129,7 @@ public class CooperationController {
                     }
                 }
                 if(flag==true)
-                    continue;
+                    continue;*/
                 HashMap<String, Object> relation = new HashMap<>();
                 relation.put("actor1",actor1);
                 relation.put("actor2",actor2);
@@ -138,9 +141,10 @@ public class CooperationController {
             return response;
         }
     }
+
     //查找指定种类，且合作热度最高的演员
-    @GetMapping(path = "/high_heat_actors", produces = MediaType.APPLICATION_JSON_VALUE)
-    public HashMap<String, Object> findHighestHeatActors(@RequestParam String category){
+    @GetMapping(path = "/high_heat_actors_2", produces = MediaType.APPLICATION_JSON_VALUE)
+    public HashMap<String, Object> findHighestHeatActors_origin(@RequestParam String category){
         try (Session session = driver.session())  {
             // 记录开始时间
             long startTime = System.currentTimeMillis();
@@ -149,7 +153,7 @@ public class CooperationController {
             if(category!=null && category!="")
                 query +=" , (m)-[:Belong]->(c:Category WHERE toLower(c.name) CONTAINS toLower(\'"+category+"\'))";
 
-            query+= ("WHERE id(p) <> id(q) RETURN p.name, q.name, sum(toInteger( m.comment_num)) AS totalHeat " +
+            query+= (" WHERE id(p) > id(q) RETURN p.name, q.name, sum(toInteger( m.comment_num)) AS totalHeat " +
                     "ORDER BY totalHeat DESC " +
                     "LIMIT 10");
             System.out.println(query);
@@ -164,18 +168,58 @@ public class CooperationController {
                 String actor1 = result.get(i).get("p.name").asString();
                 String actor2 = result.get(i).get("q.name").asString();
                 String heat = result.get(i).get("totalHeat").toString();
-                boolean flag = false;
-                for(int j=0;j<relationResult.size()&& flag==false;j++)
-                {
-                    if(relationResult.get(j).get("actor1").equals(actor1)&&relationResult.get(j).get("actor2").equals(actor1))
-                    {
-                        flag = true;
-                    } else if (relationResult.get(j).get("actor1").equals(actor2)&&relationResult.get(j).get("actor2").equals(actor1)) {
-                        flag = true;
-                    }
-                }
-                if(flag==true)
-                    continue;
+//                boolean flag = false;
+//                for(int j=0;j<relationResult.size()&& flag==false;j++)
+//                {
+//                    if(relationResult.get(j).get("actor1").equals(actor1)&&relationResult.get(j).get("actor2").equals(actor1))
+//                    {
+//                        flag = true;
+//                    } else if (relationResult.get(j).get("actor1").equals(actor2)&&relationResult.get(j).get("actor2").equals(actor1)) {
+//                        flag = true;
+//                    }
+//                }
+//                if(flag==true)
+//                    continue;
+                HashMap<String, Object> relation = new HashMap<>();
+                relation.put("actor1",actor1);
+                relation.put("actor2",actor2);
+                relation.put("heat",heat);
+                relationResult.add(relation);
+            }
+            response.put("relation",relationResult);
+            response.put("time",endTime-startTime);
+            return response;
+        }
+    }
+
+    @GetMapping(path = "/high_heat_actors", produces = MediaType.APPLICATION_JSON_VALUE)
+    //优化1 使用了with，避免了笛卡尔积
+    //优化2 先查找指定种类的电影，再查找合作热度最高的演员
+    public HashMap<String, Object> findHighestHeatActors_2(@RequestParam String category){
+        try (Session session = driver.session())  {
+            // 记录开始时间
+            long startTime = System.currentTimeMillis();
+            //直接返回名字和评论数量
+            String query=new String("");
+            if(category!=null && category!="")
+            query+=("Match (m:Movie)-[:Belong]->(c:Category WHERE toLower(c.name) CONTAINS toLower(\'"+category+"\')) "+
+                    "MATCH (p:Person)-[:Act]->(m)<-[:Act]-(q:Person) ");
+            else
+                query+="MATCH (p:Person)-[:Act]->(m:Movie)<-[:Act]-(q:Person) ";
+            query+=(" WHERE id(p) > id(q) RETURN p.name, q.name, sum(toInteger( m.comment_num)) AS totalHeat " +
+                    "ORDER BY totalHeat DESC " +
+                    "LIMIT 10");
+            System.out.println(query);
+            Result res= session.run(query);
+            // 记录结束时间
+            long endTime = System.currentTimeMillis();
+            HashMap<String,Object> response = new HashMap<>();
+            List<Record> result = res.list();//通过执行请求，返回的内容
+            List<HashMap<String, Object>> relationResult = new ArrayList<>();//整理返回的关系信息
+            for(int i=0;i<result.size();++i){
+                String actor1 = result.get(i).get("p.name").asString();
+                String actor2 = result.get(i).get("q.name").asString();
+                String heat = result.get(i).get("totalHeat").toString();
                 HashMap<String, Object> relation = new HashMap<>();
                 relation.put("actor1",actor1);
                 relation.put("actor2",actor2);
