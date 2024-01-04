@@ -37,14 +37,17 @@ public class CooperationController {
     order by count(m) desc：按照合作的电影数量 m 降序排序结果。
 
     limit 1：限制只返回排序后的第一条记录，即合作次数最多的那对人员的信息*/
+    //这是优化前的代码
     @GetMapping(path = "/actor_director_2",produces =  MediaType.APPLICATION_JSON_VALUE)
     public HashMap<String, Object> findMostCooperateActorAndDirector_origin(){
         try (Session session = driver.session())  {
             // 记录开始时间
             long startTime = System.currentTimeMillis();
+            String query="Match (p:Person)-[r:Act]->(m:Movie)<-[a:Direct]-(q:Person) " +
+                    "where id(p)<> id(q) return p.name,q.name,count(m) order by count(m) desc limit 10";
+            System.out.println(query);
             //直接返回名字和合作次数
-            Result res= session.run("Match (p:Person)-[r:Act]->(m:Movie)<-[a:Direct]-(q:Person) " +
-                    "where id(p)<> id(q) return p.name,q.name,count(m) order by count(m) desc limit 10");
+            Result res= session.run(query);
             // 记录结束时间
             long endTime = System.currentTimeMillis();
             HashMap<String,Object> response = new HashMap<>();
@@ -73,9 +76,11 @@ public class CooperationController {
         try (Session session = driver.session())  {
             // 记录开始时间
             long startTime = System.currentTimeMillis();
+            String query="Match (p:Person)-[r:DirectAct]->(q:Person) " +
+                    "return p.name,q.name,r.count order by r.count desc limit 10";
             //直接通过r.count找到合作最多的演员和导演
-            Result res= session.run("Match (p:Person)-[r:DirectAct]->(q:Person) " +
-                    "return p.name,q.name,r.count order by r.count desc limit 10");
+            System.out.println(query);
+            Result res= session.run(query);
             // 记录结束时间
             long endTime = System.currentTimeMillis();
             HashMap<String,Object> response = new HashMap<>();
@@ -105,9 +110,11 @@ public class CooperationController {
         try (Session session = driver.session())  {
             // 记录开始时间
             long startTime = System.currentTimeMillis();
+            String query="Match (p:Person)-[r:Act]->(m:Movie)<-[a:Act]-(q:Person) " +
+                    "where id(p)> id(q) return p.name,q.name,count(m) order by count(m) desc limit 10";
+            System.out.println(query);
             //直接返回名字和合作次数
-            Result res= session.run("Match (p:Person)-[r:Act]->(m:Movie)<-[a:Act]-(q:Person) " +
-                    "where id(p)> id(q) return p.name,q.name,count(m) order by count(m) desc limit 10");
+            Result res= session.run(query);
             // 记录结束时间
             long endTime = System.currentTimeMillis();
             HashMap<String,Object> response = new HashMap<>();
@@ -143,6 +150,7 @@ public class CooperationController {
     }
 
     //查找指定种类，且合作热度最高的演员
+    //这是优化前的代码
     @GetMapping(path = "/high_heat_actors_2", produces = MediaType.APPLICATION_JSON_VALUE)
     public HashMap<String, Object> findHighestHeatActors_origin(@RequestParam String category){
         try (Session session = driver.session())  {
@@ -164,22 +172,9 @@ public class CooperationController {
             List<Record> result = res.list();//通过执行请求，返回的内容
             List<HashMap<String, Object>> relationResult = new ArrayList<>();//整理返回的关系信息
             for(int i=0;i<result.size();++i){
-                //首先判断是否已经存在这个关系
                 String actor1 = result.get(i).get("p.name").asString();
                 String actor2 = result.get(i).get("q.name").asString();
                 String heat = result.get(i).get("totalHeat").toString();
-//                boolean flag = false;
-//                for(int j=0;j<relationResult.size()&& flag==false;j++)
-//                {
-//                    if(relationResult.get(j).get("actor1").equals(actor1)&&relationResult.get(j).get("actor2").equals(actor1))
-//                    {
-//                        flag = true;
-//                    } else if (relationResult.get(j).get("actor1").equals(actor2)&&relationResult.get(j).get("actor2").equals(actor1)) {
-//                        flag = true;
-//                    }
-//                }
-//                if(flag==true)
-//                    continue;
                 HashMap<String, Object> relation = new HashMap<>();
                 relation.put("actor1",actor1);
                 relation.put("actor2",actor2);
@@ -193,7 +188,7 @@ public class CooperationController {
     }
 
     @GetMapping(path = "/high_heat_actors", produces = MediaType.APPLICATION_JSON_VALUE)
-    //优化1 使用了with，避免了笛卡尔积
+    //优化1 改成使用2次MATCH，避免了笛卡尔积
     //优化2 先查找指定种类的电影，再查找合作热度最高的演员
     public HashMap<String, Object> findHighestHeatActors_2(@RequestParam String category){
         try (Session session = driver.session())  {

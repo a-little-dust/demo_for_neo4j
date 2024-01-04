@@ -23,19 +23,21 @@ public class MatchController {
         this.driver = driver;
         try (Session session = driver.session()) {
             //进行预热查询
-            session.run("MATCH (n) RETURN count(n)");
+            session.run("MATCH (m:Movie)-[r]->() RETURN count(r)");
+            System.out.println("match的预热查询完成");
         }
     }
 
-    @PostMapping(path = "/match", produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(path = "/match_2", produces = MediaType.APPLICATION_JSON_VALUE)
     //根据条件查找电影
-    public HashMap<String, Object> getMovieByCondition(@RequestBody HashMap<String, MovieSearcherDto> MovieInfo) {
+    //这是优化之前的版本
+    public HashMap<String, Object> getMovieByCondition_2(@RequestBody HashMap<String, MovieSearcherDto> MovieInfo) {
 //MATCH (m:Movie {title:'Book and Sword', isPositive:'True'})-[:Belong]->(c:Category)
 //RETURN COUNT(m)
         //所以需要分别找到电影、演员等需要满足什么条件
         try (Session session = driver.session()) {
             MovieSearcherDto MovieSearcher = MovieInfo.get("movieInfo");
-            String query = "match (m:Movie) ";
+            String query="match (m:Movie) ";
             //首先把MovieSearcher转为我们需要的数据
             //以下几项内容需要按逗号分隔：actors,directorNames,category
             List<String> actor_list = new ArrayList<>();
@@ -92,18 +94,18 @@ public class MatchController {
             // 类别
             if (!category_list.isEmpty()) {
                 for (String category : category_list)
-                    query += " , (m)-[:Belong]->(:Category{name:\"" + category + "\"})";
+                    query += " , (m)-[:Belong]->(c:Category where toLower(c.name) contains toLower(\"" + category + "\"))";
             }
             // 导演名称
             if (!director_list.isEmpty()) {
                 for (String directorName : director_list) {
-                    query += " ,(m)<-[:Direct]-(:Person{name:\"" + directorName + "\"})";
+                    query += " ,(m)<-[:Direct]-(d:Person where toLower(d.name) contains toLower(\"" + directorName + "\"))";
                 }
             }
             // 演员名称
             if (!actor_list.isEmpty()) {
                 for (String actor : actor_list) {
-                    query += " ,(m)<-[:Act]-(:Person{name:\"" + actor + "\"})";
+                    query += " ,(m)<-[:Act]-(a:Person where toLower(a.name) contains toLower(\"" + actor + "\"))";
                 }
             }
             //where只出现一次，后面的条件都用and连接
@@ -169,7 +171,7 @@ public class MatchController {
             }
 
             query += " return m";
-            query += " limit 20";
+            query += " limit 10";
             System.out.println("查询语句为: " + query);
 
             // 记录开始时间
@@ -220,6 +222,187 @@ public class MatchController {
                 movieResult.add(movieNode);
             }
 System.out.println("接收到的电影为："+movieResult);
+            response.put("movies", movieResult);
+            response.put("movieNum", result.size());//所有符合条件的电影数
+            response.put("time", endTime - startTime);
+
+            return response;
+        }
+    }
+    @PostMapping(path = "/match", produces = MediaType.APPLICATION_JSON_VALUE)
+    //根据条件查找电影
+    //优化1：把is_positive属性放在match部分
+    //优化2：把电影名字放在match部分
+    //优化3：支持电影、演员、导演、类别的模糊查询
+    //优化4：把演员/导演/类别的查询放在match部分
+    //
+    public HashMap<String, Object> getMovieByCondition(@RequestBody HashMap<String, MovieSearcherDto> MovieInfo) {
+//MATCH (m:Movie {title:'Book and Sword', isPositive:'True'})-[:Belong]->(c:Category)
+//RETURN COUNT(m)
+        //所以需要分别找到电影、演员等需要满足什么条件
+        try (Session session = driver.session()) {
+            MovieSearcherDto MovieSearcher = MovieInfo.get("movieInfo");
+            String query="match (m:Movie";
+            //正向评论
+            if (MovieSearcher.getPositive() != null) {
+                query+="{has_positive:";
+                if (MovieSearcher.getPositive() == true)
+                    query += "\"True\"} ";
+                else
+                    query += "\"False\"} ";
+            }
+            //电影名字 是对大小写不敏感的 支持模糊查询
+            if (MovieSearcher.getMovieName() != null && MovieSearcher.getMovieName().trim() != "") {
+                query += " where toLower(m.title) contains toLower(\"" + MovieSearcher.getMovieName() + "\") ";
+            }
+            query+=") ";
+            //首先把MovieSearcher转为我们需要的数据
+            //以下几项内容需要整理格式：actors,directorNames,category
+            String actor=null,director=null,category=null;
+            if(MovieSearcher.getActors()!=null&&MovieSearcher.getActors().trim()!="")
+                actor=MovieSearcher.getActors().trim().toLowerCase();
+            if(MovieSearcher.getDirectorNames()!=null&&MovieSearcher.getDirectorNames().trim()!="")
+                director=MovieSearcher.getDirectorNames().trim().toLowerCase();
+            if(MovieSearcher.getCategory()!=null&&MovieSearcher.getCategory().trim()!="")
+                category=MovieSearcher.getCategory().trim().toLowerCase();
+            //接下来处理date，前端传来两个字符串，分别是最小日期和最大日期
+            List<String> date_list = MovieSearcher.getDate();
+            String start_date=null,end_date=null;
+            if(date_list!=null&&date_list.size()>=1){
+                start_date=date_list.get(0);
+                if(date_list.size()>=2)
+                    end_date=date_list.get(1);
+            }
+            System.out.println("start_date:"+start_date+" end_date:"+end_date);
+            //已知，start_date和end_date的格式为：yyyy-mm-ddThh:mm:ss.000Z 例如：2010-11-02T00:00:00.000Z
+            //我们需要把它们转为：yyyy-mm-dd
+            int start_year = 0, start_month = 0, start_day = 0, end_year = 0, end_month = 0, end_day = 0;
+            if (start_date != null && start_date != "") {
+                String[] start_date_list = start_date.split("T");
+                String[] start_date_final_list = start_date_list[0].split("-");
+                start_year = Integer.parseInt(start_date_final_list[0]);
+                start_month = Integer.parseInt(start_date_final_list[1]);
+                start_day = Integer.parseInt(start_date_final_list[2]);
+            }
+            if (end_date != null && end_date != "") {
+                String[] end_date_list = end_date.split("T");
+                String[] end_date_final_list = end_date_list[0].split("-");
+                end_year = Integer.parseInt(end_date_final_list[0]);
+                end_month = Integer.parseInt(end_date_final_list[1]);
+                end_day = Integer.parseInt(end_date_final_list[2]);
+            }
+            //先判断它是否有连接什么关系
+            //下面这些都出现在where之前
+Boolean matchAppear=false;
+            // 导演名称
+            if(director!=null) {
+                query += "<-[:Direct]-(d:Person WHERE toLower(d.name) contains toLower(\"" + director + "\"))";
+                matchAppear=true;
+            }
+            // 类别
+            if (category != null) {
+                if(matchAppear==false)
+                    matchAppear=true;
+                else
+                    query+=" MATCH (m)";
+                query += "-[:Belong]->(c:Category WHERE toLower(c.name) contains toLower(\"" + category + "\"))";
+            }
+            // 演员名称
+            if(actor!=null) {
+                if(matchAppear==false)
+                    matchAppear=true;
+                else
+                    query+=" MATCH (m)";
+                query += " <-[:Act]-(a:Person WHERE toLower(a.name) contains toLower(\"" + actor + "\"))";
+            }
+            //where只出现一次，后面的条件都用and连接
+            Boolean whereAppear = false;
+            //发布日期
+            if (start_date != null) {
+                    query += " where ";
+                    whereAppear = true;
+                query += " toInteger(m.year)*10000+toInteger(m.month)*100+toInteger(m.day) >= " +
+                        (10000 * start_year + 100 * start_month + start_day) + " ";
+            }
+            if (end_date != null) {
+                if (whereAppear) {
+                    query += " and ";
+                } else {
+                    query += " where ";
+                    whereAppear = true;
+                }
+                query += " toInteger(m.year)*10000+toInteger(m.month)*100+toInteger(m.day) <= " +
+                        (10000 * end_year + 100 * end_month + end_day) + " ";
+            }
+            // 最低评分
+            if (MovieSearcher.getMinScore() != null) {
+                if (whereAppear) {
+                    query += " and ";
+                } else {
+                    query += " where ";
+                    whereAppear = true;
+                }
+                query += " toFloat(m.rating) >=" + MovieSearcher.getMinScore() + " ";
+            }
+            // 最高评分
+            if (MovieSearcher.getMaxScore() != null) {
+                if (whereAppear) {
+                    query += " and ";
+                } else {
+                    query += " where ";
+                    whereAppear = true;
+                }
+                query += " toFloat(m.rating) <= " + MovieSearcher.getMaxScore() + " ";
+            }
+
+            query += " return DISTINCT m";
+            query += " limit 10";
+            System.out.println("查询语句为: " + query);
+
+            // 记录开始时间
+            long startTime = System.currentTimeMillis();
+            Result res = session.run(query);
+//构建响应，它包括：movies num time
+            HashMap<String, Object> response = new HashMap<>();
+            List<Record> result = res.list();//通过执行请求，返回的内容
+            List<HashMap<String, Object>> movieResult = new ArrayList<>();//整理返回的电影信息
+            // 记录结束时间
+            long endTime = System.currentTimeMillis();
+            // 返回一部分数据
+            for (int i = 0; i < result.size() && i < 20; ++i) {
+                //System.out.println(result.get(i));
+                if (result.get(i).get("m") == NullValue.NULL)
+                    continue;
+                HashMap<String, Object> movieNode = new HashMap<>();
+                //找第i个结点的属性
+                if (result.get(i).get("m").get("title") != NullValue.NULL) {
+                    movieNode.put("movieName", result.get(i).get("m").get("title").asString());
+                }
+                if (result.get(i).get("m").get("format") != NullValue.NULL) {
+                    String format = result.get(i).get("m").get("format").asString();
+                    format = format.replaceAll("\\[|\\]|'|\"", "");  // 去除方括号、单引号和双引号
+                    movieNode.put("format", format);
+                }
+                if (result.get(i).get("m").get("comment_num") != NullValue.NULL) {
+                    int comment_num = Integer.parseInt(result.get(i).get("m").get("comment_num").asString());
+                    movieNode.put("comment_num", String.valueOf(comment_num));
+                }
+                String year = null, month = null, day = null;
+                if (result.get(i).get("m").get("year") != NullValue.NULL) {
+                    year = result.get(i).get("m").get("year").asString();
+                }
+                if (result.get(i).get("m").get("month") != NullValue.NULL) {
+                    month = result.get(i).get("m").get("month").asString();
+                }
+                if (result.get(i).get("m").get("day") != NullValue.NULL) {
+                    day = result.get(i).get("m").get("day").asString();
+                }
+                if (year != null && month != null && day != null)
+                    movieNode.put("time", year + "-" + month + "-" + day);
+                else
+                    movieNode.put("time", "未知");
+                movieResult.add(movieNode);
+            }
             response.put("movies", movieResult);
             response.put("movieNum", result.size());//所有符合条件的电影数
             response.put("time", endTime - startTime);
