@@ -17,7 +17,6 @@ import java.util.List;
 @RequestMapping("/neo4j/cooperation")
 public class CooperationController {
     private final Driver driver;
-
     public CooperationController(Driver driver) {
         this.driver = driver;
         try (Session session = driver.session()){

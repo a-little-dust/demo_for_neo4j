@@ -17,13 +17,11 @@ import java.util.List;
 @RequestMapping("/neo4j")
 public class MatchController {
     private final Driver driver;
-
     public MatchController(Driver driver) {
-
         this.driver = driver;
         try (Session session = driver.session()) {
             //进行预热查询
-            session.run("MATCH (m:Movie)-[r]->() RETURN count(r)");
+            session.run("MATCH (m:Movie) RETURN count(m)");
             System.out.println("match的预热查询完成");
         }
     }
